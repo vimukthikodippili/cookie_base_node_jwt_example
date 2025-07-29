@@ -40,33 +40,57 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
+    // Validate input
+    if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required.' });
+    }
 
+    // Find user
     const user = await Customer.findOne({ email });
-    if (!user || !(await bcrypt.compare(password, user.password)))
-      return res.status(401).json({ message: 'Invalid credentials' });
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
 
-    const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
+    // Compare password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
+
+    // ✅ Generate access token
+    const accessToken = jwt.sign(
+      {
+        id: user._id,
+        role: user.role || 'customer', // default role if not set
+      },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '1d' }
     );
 
-    res.cookie('token', token, {
+    // ✅ Set HTTP-only cookie
+    res.cookie('token', accessToken, {
       httpOnly: true,
-      secure: false, // change to true in production (HTTPS)
-      sameSite: 'Lax',
-      maxAge: 3600000
+      secure: false, // true in production (HTTPS)
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
-    res.json({ message: 'Login successful', user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+    // Send user info to frontend
+    res.status(200).json({
+      message: 'Login successful',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role || 'customer',
+      },
+    });
+
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
-
 /**
  * Logout user by clearing cookie
  * @route POST /api/auth/logout
